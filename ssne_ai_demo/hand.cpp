@@ -130,32 +130,16 @@ int main()
      ******************************************************************************************/
 	while (!check_exit_flag()) {
 		// 从sensor获取图像
-		processor.GetImage(&img_sensor);
-
-		// ===================== 单通道灰度图 → 3通道数据 =====================
-		const int img_w = 720;
-		const int img_h = 720;
-		uint8_t *gray_data = (uint8_t *)img_sensor.data;
-
-		int rgb_data_size = img_w * img_h * 3;
-		uint8_t *rgb_data = new uint8_t[rgb_data_size];
-
-		// 转3通道
-		for (int i = 0; i < img_w * img_h; i++) {
-			rgb_data[i * 3 + 0] = gray_data[i];
-			rgb_data[i * 3 + 1] = gray_data[i];
-			rgb_data[i * 3 + 2] = gray_data[i];
+		int ret = processor.GetImage(&img_sensor);
+		if (ret != 0) {
+			fprintf(stderr, "Failed to get image from sensor!\n");
+			continue;
 		}
 
-		// 构造RGB图像
-		ssne_tensor_t img_rgb = img_sensor;
-		img_rgb.data = rgb_data;
-
+		// ===================== 单通道灰度图直接使用 =====================
+		// 直接使用灰度图像进行推理，不需要转换为RGB
 		// 推理
-		model.Predict(&img_rgb, det_result);
-
-		// 释放内存
-		delete[] rgb_data;
+		model.Predict(&img_sensor, det_result);
 
 		// ===================== 手部关键点解析 =====================
 		std::vector<std::array<float, 4>> single_hand_2d;
@@ -164,13 +148,22 @@ int main()
 			std::array<float, 63> hand_data = det_result->landmarks_local.at(0);
 			const int POINT_OFFSET = 2;
 
+			// 计算缩放因子：从模型输入尺寸(224x224)到裁剪图像尺寸(720x720)
+			float scale_x = static_cast<float>(crop_shape[0]) / det_shape[0];
+			float scale_y = static_cast<float>(crop_shape[1]) / det_shape[1];
+
 			// 21个关键点
 			for (int kp_idx = 0; kp_idx < 21; ++kp_idx) {
 				float x_raw = hand_data[kp_idx * 3 + 0];
 				float y_raw = hand_data[kp_idx * 3 + 1];
 
-				float x_orig = x_raw;
-				float y_orig = y_raw + crop_offset_y;
+				// 从模型输入尺寸映射到裁剪图像尺寸
+				float x_crop = x_raw * scale_x;
+				float y_crop = y_raw * scale_y;
+
+				// 从裁剪图像尺寸映射到原始图像尺寸
+				float x_orig = x_crop;
+				float y_orig = y_crop + crop_offset_y;
 
 				float x1 = x_orig - POINT_OFFSET;
 				float y1 = y_orig - POINT_OFFSET;

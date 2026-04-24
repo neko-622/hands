@@ -76,6 +76,16 @@ void VISUALIZER::Draw(const std::vector<std::array<float, 4>>& boxes) {
         int xmax = static_cast<int>(boxes[i][2]);  // 右下角x坐标
         int ymax = static_cast<int>(boxes[i][3]);  // 右下角y坐标
 
+        // 确保坐标顺序正确
+        if (xmin > xmax) std::swap(xmin, xmax);
+        if (ymin > ymax) std::swap(ymin, ymax);
+
+        // 确保坐标在画面范围内
+        xmin = std::max(0, std::min(xmin, m_width - 1));
+        ymin = std::max(0, std::min(ymin, m_height - 1));
+        xmax = std::max(0, std::min(xmax, m_width - 1));
+        ymax = std::max(0, std::min(ymax, m_height - 1));
+
         q.box = {xmin, ymin, xmax, ymax};  // 设置矩形框坐标
 
         // 设置矩形框样式参数
@@ -90,7 +100,9 @@ void VISUALIZER::Draw(const std::vector<std::array<float, 4>>& boxes) {
 
     // 调用OSD设备绘制所有矩形框到指定图层（layer 0）
     // 使用指定图层版本，避免清除所有图层（包括layer 1的固定正方形）
-    osd_device.Draw(quad_rangle_vec, DETECTION_LAYER_ID);
+    if (!quad_rangle_vec.empty()) {
+        osd_device.Draw(quad_rangle_vec, DETECTION_LAYER_ID);
+    }
 }
 
 /**
@@ -146,8 +158,14 @@ void VISUALIZER::DrawFixedSquare(int x_min, int y_min, int x_max, int y_max, int
  * @param layer_id 使用的OSD layer ID（建议使用2，避免与其他图层冲突）
  * @description 绘制一次后，位图会一直显示，不随帧数消失。坐标系统以画面左上角为原点(0,0)，X向右为正，Y向下为正。
  */
-void VISUALIZER::DrawBitmap(const std::string& bitmap_path, const std::string& lut_path,
+void VISUALIZER::DrawBitmap(const std::string& bitmap_path, const std::string& lut_path, 
                             int pos_x, int pos_y, int layer_id) {
+    // 验证输入参数
+    if (bitmap_path.empty()) {
+        LOG_DEBUG("[VISUALIZER] Bitmap path is empty!");
+        return;
+    }
+
     // 构建完整路径
     std::string full_bitmap_path = "/app_demo/app_assets/" + bitmap_path;
 
@@ -159,6 +177,10 @@ void VISUALIZER::DrawBitmap(const std::string& bitmap_path, const std::string& l
         lut_full_path = "/app_demo/app_assets/" + lut_path;
         full_lut_path = lut_full_path.c_str();
     }
+
+    // 确保坐标在画面范围内
+    pos_x = std::max(0, std::min(pos_x, m_width - 1));
+    pos_y = std::max(0, std::min(pos_y, m_height - 1));
 
     LOG_DEBUG("[VISUALIZER] Drawing bitmap: %s", full_bitmap_path);
     LOG_DEBUG(" at position (%d, %d), layer_id=%d\n", pos_x, pos_y, layer_id);
