@@ -31,10 +31,10 @@ void HandLandMarksResult::Reserve(int size) {
  * @description 调整数量
  */
 void HandLandMarksResult::Resize(int size) {
-    landmarks_local.reserve(size);
-    landmarks_world.reserve(size);
-    confidence.reserve(size);
-    flag.reserve(size);
+    landmarks_local.resize(size);
+    landmarks_world.resize(size);
+    confidence.resize(size);
+    flag.resize(size);
 }
 
 /**
@@ -77,7 +77,6 @@ void HLMD_MODEL::Predict(ssne_tensor_t* img_in, HandLandMarksResult* result)
 {
     // offline图像tensor初始化：对输入图像进行预处理（resize、归一化等）
     int ret = RunAiPreprocessPipe(pipe_offline, *img_in, inputs[0]);
-    // printf("ret: %d\n", ret);
     if (ret != 0) {
         printf("[ERROR] Failed to run AI preprocess pipe!\n");
         printf("ret: %d\n", ret);
@@ -93,6 +92,7 @@ void HLMD_MODEL::Predict(ssne_tensor_t* img_in, HandLandMarksResult* result)
     if (ssne_inference(model_id, 1, inputs))
     {
         fprintf(stderr, "ssne inference fail!\n");
+        return;
     }
 
     // 获取模型输出：4个输出tensor（1+1+1+1）
@@ -103,29 +103,26 @@ void HLMD_MODEL::Predict(ssne_tensor_t* img_in, HandLandMarksResult* result)
     float *Id2 = (float*)get_data(outputs[2]);  // 手性
     float *Id3 = (float*)get_data(outputs[3]);  // 世界坐标系
 
-    // std::vector<std::array<float, 63>> landmarks;
-    // std::vector<float> confidence;
-    // std::vector<float> flag;
-    // std::vector<std::array<float, 63>> landmarks_w;
-
-    //执行后处理过程
-    //...
+    if (!Id0 || !Id1 || !Id2 || !Id3) {
+        fprintf(stderr, "Failed to get output data!\n");
+        return;
+    }
 
     //保存结果
     result->Clear();
     result->Reserve(1);
 
-    std::array<float, 63> lm;
-    memcpy(lm.data(), Id0, sizeof(float) * 63);
-    result->landmarks_local.emplace_back(lm);
+    std::array<float, 63> lm_local;
+    memcpy(lm_local.data(), Id0, sizeof(float) * 63);
+    result->landmarks_local.emplace_back(lm_local);
 
     result->confidence.emplace_back(Id1[0]);
 
     result->flag.emplace_back(Id2[0]);
 
-    // std::array<float, 63> lmw;
-    memcpy(lm.data(), Id3, sizeof(float) * 63);
-    result->landmarks_world.emplace_back(lm);
+    std::array<float, 63> lm_world;
+    memcpy(lm_world.data(), Id3, sizeof(float) * 63);
+    result->landmarks_world.emplace_back(lm_world);
 
 }
 
@@ -134,12 +131,12 @@ void HLMD_MODEL::Predict(ssne_tensor_t* img_in, HandLandMarksResult* result)
  * @description 释放所有tensor、预处理管道和计时器资源
  */
 void HLMD_MODEL::Release()
-{   
+{
     // 保存最后一帧的图像（如果有的话）
     if (g_has_frame) {
         printf("[INFO] Saving last frame images...\n");
-        save_tensor(g_last_img, "dbg_in.raw");
-        save_tensor(g_last_pipe_input, "dbg_in_pipe.raw");
+        saveImageBin(g_last_img.data, g_last_img.width, g_last_img.height, "dbg_in.raw");
+        saveImageBin(g_last_pipe_input.data, g_last_pipe_input.width, g_last_pipe_input.height, "dbg_in_pipe.raw");
         printf("[INFO] Last frame saved successfully!\n");
     }
 
@@ -218,4 +215,10 @@ void HLMD_MODEL::Initialize(std::string& model_path, std::array<int, 2>* in_img_
     uint32_t det_width = static_cast<uint32_t>(det_shape[0]);
     uint32_t det_height = static_cast<uint32_t>(det_shape[1]);
     inputs[0] = create_tensor(det_width, det_height, SSNE_Y_8, SSNE_BUF_AI);
+
+    // 创建模型输出tensor
+    outputs[0] = create_tensor(21, 3, SSNE_FLOAT32, SSNE_BUF_AI);  // 2.5D输出
+    outputs[1] = create_tensor(1, 1, SSNE_FLOAT32, SSNE_BUF_AI);    // 置信度
+    outputs[2] = create_tensor(1, 1, SSNE_FLOAT32, SSNE_BUF_AI);    // 手性
+    outputs[3] = create_tensor(21, 3, SSNE_FLOAT32, SSNE_BUF_AI);  // 世界坐标系
 }
